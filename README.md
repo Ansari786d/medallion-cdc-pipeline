@@ -27,12 +27,6 @@ flowchart LR
 | **Gold** | `gold.daily_summary` | Business-ready daily aggregation |
 
 ---
-
-## Why This Project
-
-Most ETL tickets in a services-company job involve *converting* existing logic (e.g., ADF → PySpark) rather than *designing* a pipeline from scratch. This project was built to close that gap — every design decision here has an explicit reason, documented below, so it can be defended in an interview rather than just described.
-
----
 ## Key Design Decisions
 
 - **Explicit schemas, not `inferSchema`** — predictable behavior, fails loudly on bad input instead of silently guessing types.
