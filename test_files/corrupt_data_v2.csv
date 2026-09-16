@@ -1,0 +1,11 @@
+transaction_id,product,region,amount,updated_at,payment_method
+T2001,Laptop,Mumbai,45000.0,2026-08-10 09:15:00,UPI
+T2002,Phone,Pune,22000.5,10-08-2026 10:30,Card
+,Charger,Delhi,999.0,2026-08-10 11:00:00,COD
+T2003,Monitor,Bangalore,,2026-08-10 12:00:00,NetBanking
+T2004,Keyboard,Hyderabad,1200.0,,UPI
+T2005,Mouse,Mumbai,500.0,August 10th 2026,Card
+T2006,Tablet,Pune,18000.0,2026-08-10 13:00:00,COD
+T2006,Tablet,Pune,17500.0,2026-08-10 13:45:00,COD
+,,,,,
+T2007,Headphones,Chennai,3200.75,2026-08-10 14:00:00,UPI
