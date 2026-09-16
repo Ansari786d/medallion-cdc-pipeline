@@ -33,47 +33,22 @@ flowchart LR
 Most ETL tickets in a services-company job involve *converting* existing logic (e.g., ADF → PySpark) rather than *designing* a pipeline from scratch. This project was built to close that gap — every design decision here has an explicit reason, documented below, so it can be defended in an interview rather than just described.
 
 ---
-
 ## Key Design Decisions
 
-### Why explicit schemas instead of `inferSchema=True`?
-Inferred schemas can silently change between runs depending on the data sample (e.g., a numeric column becomes a string if one row has a typo). Explicit `StructType` schemas make the pipeline predictable and fail loudly on genuinely malformed input.
-
-### Why Delta Lake over plain Parquet?
-ACID transactions (no partial/corrupt writes on failure), native `MERGE INTO` support (needed for incremental upserts), schema enforcement + controlled evolution via `mergeSchema`, and time travel for debugging.
-
-### Why watermark-based incremental load instead of full reprocessing?
-At real data volumes, reprocessing all history every run doesn't scale — cost and runtime grow with total data size, not just new data. Watermarking (tracking the max `updated_at` already processed) means each run only touches what's new.
-
-### Why deduplicate before MERGE?
-`MERGE INTO` throws `DELTA_MULTIPLE_SOURCE_ROW_MATCHING_TARGET_ROW_IN_MERGE` if the source batch has multiple rows for the same key — Spark can't resolve which one should win. This happens in real systems when upstream resends or corrects a record. Resolved deterministically using `ROW_NUMBER()` over a window, keeping the latest row per key.
-
-### Why split out timestamp-missing rows *before* the watermark filter?
-A subtle, real bug found while building this: SQL's `null > value` evaluates to `null`, not `false`. A row with a null/unparseable `updated_at` would silently vanish from the pipeline — not reaching Silver, not reaching the dead-letter table — if the watermark filter ran before validating timestamps. Fixed by explicitly separating "no valid timestamp" rows first and routing them straight to dead-letter.
-
-### Why a dead-letter table instead of failing the whole job on bad data?
-One malformed row shouldn't block every valid row in the batch. Rejected rows are tagged with a specific reason (`missing_required_field`, `unparseable_or_missing_timestamp`) and written to a separate table — visible and fixable, not silently dropped and not blocking the pipeline.
-
-### Why `try_cast` / `try_to_timestamp` instead of `cast` / `to_timestamp`?
-Under ANSI SQL mode, plain `cast()` and `to_timestamp()` throw hard errors on any malformed value, crashing the entire job over one bad row. The `try_` variants return `null` on failure instead, letting bad values flow safely into the existing validation/dead-letter logic rather than taking down the run.
-
-### Why `coalesce()` across multiple timestamp formats?
-Real upstream data isn't consistently formatted — this project's raw data mixes ISO (`yyyy-MM-dd HH:mm:ss`) and `dd-MM-yyyy HH:mm` formats across batches. `coalesce()` tries each format in order per row; the first successful parse wins, and genuinely unparseable values still fall through to `null` → dead-letter.
-
-### Why does Gold use full overwrite, not incremental logic?
-Gold aggregates are cheap to recompute since they read from the already-small, already-clean Silver table. Incremental complexity is only worth it where the underlying data volume is large (Bronze → Silver) — adding it to Gold too would be complexity without benefit.
-
-### Why is Bronze's schema more permissive than Silver's?
-Bronze's job is faithful capture, not gatekeeping — rejecting or reshaping data belongs at Silver. A new column appearing in a raw file (schema evolution) shouldn't break ingestion; strict validation happens downstream where it's actually meaningful.
-
-### Why is all config externalized to `config.yaml`?
-No table names, paths, or parameters are hardcoded inside pipeline logic. Moving from a personal dev catalog to a team/prod catalog should only ever require a config change, never a code change.
-
-### Why idempotency by filename *and* file-modification-time, not filename alone?
-A source system reusing a filename with new content (e.g., a repeatedly-overwritten `latest_orders.csv`) would be silently skipped by filename-only tracking. Tracking `_metadata.file_modification_time` alongside the path correctly treats same-named-but-changed files as new.
+- **Explicit schemas, not `inferSchema`** — predictable behavior, fails loudly on bad input instead of silently guessing types.
+- **Delta Lake over Parquet** — ACID transactions, native `MERGE`, schema evolution, time travel.
+- **Watermark-based incremental load** — only processes new data each run, not full history.
+- **Dedup before MERGE** — resolves ambiguous duplicate-key matches using `ROW_NUMBER()`, keeping the latest row per key.
+- **Timestamp validity checked before the watermark filter** — prevents null-timestamp rows from silently vanishing (`null > value` = `null`, not `false`).
+- **Dead-letter table for bad data** — bad rows are tagged and quarantined, not dropped or allowed to crash the job.
+- **`try_cast` / `try_to_timestamp`** — malformed values become `null` instead of failing the whole run.
+- **`coalesce()` across date formats** — handles inconsistent formats from different upstream sources in one pass.
+- **Gold uses full overwrite** — cheap to recompute from an already-clean Silver table; no incremental complexity needed here.
+- **Bronze schema is permissive, Silver is strict** — Bronze's job is faithful capture, not gatekeeping; validation belongs downstream.
+- **Config externalized to `config.yaml`** — moving environments is a config change, never a code change.
+- **Idempotency by filename + modification time** — a reused filename with new content is still correctly treated as new data.
 
 ---
-
 ## Real Bugs Hit & Fixed (while building this)
 
 | Bug | Root Cause | Fix |
