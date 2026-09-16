@@ -1,1 +1,30 @@
+# config.yaml
+# Central place for all paths/parameters — never hardcode these inside pipeline logic.
+# Swapping environments (dev/prod) should only ever mean changing this file.
 
+catalog: "retail_cdc"
+
+schemas:
+  bronze: "bronze"
+  silver: "silver"
+  gold: "gold"
+
+tables:
+  bronze_raw: "raw_transactions"
+  silver_clean: "transactions_clean"
+  silver_rejected: "transactions_rejected"   # dead-letter table for bad/malformed records
+  gold_summary: "daily_summary"
+
+# Columns required for a row to be considered valid at Silver stage.
+# Any row missing these goes to the dead-letter table instead of failing the whole job.
+required_columns:
+  - "transaction_id"
+  - "amount"
+  - "updated_at"
+
+# Column used to dedupe when multiple source rows map to the same key
+dedup_key: "transaction_id"
+dedup_order_by: "updated_at"
+
+# Raw file landing path (adjust to wherever you upload/drop new batch files)
+raw_file_path: "/Volumes/retail_cdc/bronze/landing/"
